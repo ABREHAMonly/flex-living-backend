@@ -1,14 +1,16 @@
 # Dockerfile
+# Multi-stage build for production
 FROM node:18-alpine AS builder
 
 WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
+COPY tsconfig.json ./
 RUN npm ci --only=production
 
 # Copy source
-COPY . .
+COPY src/ ./src/
 
 # Build TypeScript
 RUN npm run build
@@ -24,7 +26,7 @@ RUN npm ci --only=production
 
 # Copy built application
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/.env.example ./.env
+COPY --from=builder /app/package.json ./package.json
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs
@@ -33,7 +35,7 @@ USER nodejs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if(r.statusCode !== 200) throw new Error()})"
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
 EXPOSE 3000
 

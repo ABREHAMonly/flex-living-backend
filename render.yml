@@ -1,0 +1,68 @@
+# Render Blueprint Specification
+# Documentation: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: flex-living-api
+    env: node
+    region: ohio  # or choose your preferred region: oregon, frankfurt, etc.
+    plan: free  # or starter for production
+    healthCheckPath: /health
+    autoDeploy: true
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        fromDatabase:
+          name: flex-living-db
+          property: connectionString
+      - key: GOOGLE_API_KEY
+        sync: false  # Will be set manually in Render dashboard
+      - key: PORT
+        value: 3000
+      - key: API_RATE_LIMIT_WINDOW_MS
+        value: "900000"  # 15 minutes
+      - key: API_RATE_LIMIT_MAX
+        value: "100"
+      - key: CORS_ORIGIN
+        value: "*"  # For development; restrict in production
+      - key: LOG_LEVEL
+        value: info
+      - key: JWT_SECRET
+        generateValue: true  # Auto-generates a secure secret
+
+databases:
+  - name: flex-living-db
+    region: ohio
+    plan: free  # 512MB storage for free tier
+    databaseName: flex-living
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere
+    # MongoDB specific configuration
+    mongoVersion: "6"
+    # Initialization script will be run on first deploy
+    initScript: |
+      db = db.getSiblingDB('flex-living');
+      db.createUser({
+        user: '${USERNAME}',
+        pwd: '${PASSWORD}',
+        roles: [
+          {
+            role: 'readWrite',
+            db: 'flex-living'
+          }
+        ]
+      });
+      db.createCollection('reviews');
+      db.createCollection('listings');
+      db.reviews.createIndex({ externalId: 1 }, { unique: true });
+      db.reviews.createIndex({ listingId: 1 });
+      db.reviews.createIndex({ isApproved: 1 });
+      db.reviews.createIndex({ isPublic: 1 });
+      db.reviews.createIndex({ submittedAt: -1 });
+      db.reviews.createIndex({ rating: -1 });
+      db.listings.createIndex({ listingId: 1 }, { unique: true });
+      db.listings.createIndex({ googlePlaceId: 1 });
