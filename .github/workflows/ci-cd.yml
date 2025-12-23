@@ -18,17 +18,23 @@ jobs:
         ports:
           - 27017:27017
         options: >-
-          --health-cmd mongo
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd="mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
         env:
           MONGO_INITDB_DATABASE: flex-living-test
 
+    env:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://localhost:27017/flex-living-test
+      PORT: 3001
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Required for Codecov to get git history
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -48,41 +54,32 @@ jobs:
       - name: Run unit tests
         run: npm run test:unit
         env:
-          NODE_ENV: test
-          MONGODB_URI: mongodb://localhost:27017/flex-living-test
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          PORT: 3001
 
       - name: Run integration tests
         run: npm run test:integration
         env:
-          NODE_ENV: test
-          MONGODB_URI: mongodb://localhost:27017/flex-living-test
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          PORT: 3001
 
       - name: Generate coverage report
         run: npm run test:coverage
         env:
-          NODE_ENV: test
-          MONGODB_URI: mongodb://localhost:27017/flex-living-test
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          PORT: 3001
 
       - name: Upload coverage to Codecov
+        if: success()
         uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/lcov.info
           flags: unittests
           name: codecov-umbrella
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           verbose: true
 
-      # Upload test results for better visualization
       - name: Upload test results
-        uses: actions/upload-artifact@v3
         if: always()
+        uses: actions/upload-artifact@v3
         with:
           name: test-results
           path: |
@@ -93,10 +90,10 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: production
     
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -110,30 +107,13 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Optional: Upload build artifact
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: build-artifact
-          path: |
-            dist/
-            package.json
-            package-lock.json
-
-      # Deploy to Render
       - name: Deploy to Render
-        if: success()
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
-          # Install Render CLI
-          curl -fsSL https://render.com/download/cli.sh | bash
-          
-          # Deploy to Render
-          render deploy $RENDER_SERVICE_ID --api-key $RENDER_API_KEY
-          
-          # Alternative: Use Render API directly
-          # curl -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
-          #   -H "Authorization: Bearer $RENDER_API_KEY" \
-          #   -H "Content-Type: application/json"
+          # Deploy using Render API
+          curl -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            --fail
