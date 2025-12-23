@@ -77,14 +77,16 @@ jobs:
           fail_ci_if_error: false
           verbose: true
 
+
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: |
             coverage/
             junit.xml
+          if-no-files-found: ignore
 
   deploy:
     needs: test
