@@ -31,5 +31,5 @@ export const config = {
   RATE_LIMIT_MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'),
   
   // CORS
-  CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3001',
+  CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173',
 };
