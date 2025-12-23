@@ -1,6 +1,5 @@
 # Dockerfile
 # Multi-stage build for production
-# Consider updating to node:20-alpine for better compatibility with your packages
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -8,7 +7,7 @@ WORKDIR /app
 # Install ALL dependencies (including devDependencies) for building
 COPY package*.json ./
 COPY tsconfig.json ./
-RUN npm ci  # Removed '--only=production' so tsc is available
+RUN npm ci
 
 # Copy source and build TypeScript
 COPY src/ ./src/
@@ -29,6 +28,10 @@ COPY --from=builder /app/dist ./dist
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
+
+# Create logs directory with correct permissions BEFORE switching user
+RUN mkdir -p /app/logs && chown -R nodejs:nodejs /app/logs
+
 USER nodejs
 
 # Health check
