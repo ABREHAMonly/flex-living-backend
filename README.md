@@ -49,6 +49,8 @@ npm start
 
 ```
 flex-living-backend/
+├── .github/
+│   └── workflows/       #Github workflows  for CI/CD
 ├── src/
 │   ├── config/          # Environment & database config
 │   ├── controllers/     # Route controllers
