@@ -451,11 +451,11 @@ For issues, questions, or support:
 
 ---
 
-**Deployment URL**: `https://flex-living-backend.onrender.com` (after deployment)
+**Deployment URL**: `https://flex-living-backend-vprf.onrender.com` (after deployment)
 
-**API Documentation**: `https://flex-living-backend.onrender.com/api/docs`
+**API Documentation**: `https://flex-living-backend-vprf.onrender.com/api/docs`
 
-**Health Check**: `https://flex-living-backend.onrender.com/health`
+**Health Check**: `https://flex-living-backend-vprf.onrender.com/health`
 
 ---
 
