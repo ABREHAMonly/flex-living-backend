@@ -229,41 +229,42 @@ describe('Dashboard API Integration Tests', () => {
       expect(cleanlinessCat.count).toBe(2);
     });
 
-    it('should identify issues from negative reviews', async () => {
-      // Add a negative review
-      await Review.create({
-        externalId: 'review-negative',
-        type: 'guest-to-host',
-        status: 'published',
-        rating: 2,
-        publicReview: 'Very dirty and noisy place. Terrible experience.',
-        reviewCategory: [
-          { category: 'cleanliness', rating: 2 },
-          { category: 'noise', rating: 1 }
-        ],
-        submittedAt: new Date(),
-        guestName: 'Unhappy Guest',
-        listingName: 'Luxury Apartment Downtown',
-        listingId: 'listing-1',
-        channel: 'hostaway',
-        isApproved: true,
-        isPublic: true
-      });
+it('should identify issues from negative reviews', async () => {
+  // Add a negative review
+  await Review.create({
+    externalId: 'review-negative',
+    type: 'guest-to-host',
+    status: 'published',
+    rating: 2,
+    publicReview: 'Very dirty and noisy place. Terrible experience.',
+    reviewCategory: [
+      { category: 'cleanliness', rating: 2 },
+      { category: 'noise', rating: 1 }
+    ],
+    submittedAt: new Date(),
+    guestName: 'Unhappy Guest',
+    listingName: 'Luxury Apartment Downtown',
+    listingId: 'listing-1',
+    channel: 'hostaway',
+    isApproved: true,
+    isPublic: true
+  });
 
-      const response = await request(app.getServer())
-        .get('/api/dashboard/performance')
-        .query({ timeframe: '30d' })
-        .expect(200);
-      
-      const property1 = response.body.data.properties.find(
-        (p: any) => p.listingId === 'listing-1'
-      );
-      
-      expect(property1.issues.length).toBeGreaterThan(0);
-      expect(property1.issues.some((issue: any) => 
-        issue.category === 'cleanliness' && issue.severity === 'high'
-      )).toBe(true);
-    });
+  const response = await request(app.getServer())
+    .get('/api/dashboard/performance')
+    .query({ timeframe: '30d' })
+    .expect(200);
+  
+  const property1 = response.body.data.properties.find(
+    (p: any) => p.listingId === 'listing-1'
+  );
+  
+  expect(property1.issues.length).toBeGreaterThan(0);
+  // Now expecting 'high' severity since we made the detection more sensitive
+  expect(property1.issues.some((issue: any) => 
+    issue.category === 'cleanliness' && issue.severity === 'high'
+  )).toBe(true);
+});
 
     it('should generate recommendations based on data', async () => {
       const response = await request(app.getServer())

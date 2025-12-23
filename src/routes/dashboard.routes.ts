@@ -58,7 +58,7 @@ router.get(
   '/quick-stats',
   [
     query('listingId').optional().isString(),
-    query('timeframe').optional().isString().isIn(['7d', '30d', '90d', '1y'])
+    query('timeframe').optional().isString().isIn(['7d', '30d', '90d', '1y', 'all']),
   ],
   validateRequest,
   DashboardController.getQuickStats

@@ -258,46 +258,93 @@ export class DashboardController {
   }
 }
 
-  // Update helper methods to accept ProcessedReview[]
-  private static identifyIssues(reviews: ProcessedReview[]): Issue[] {
-    const issues: Issue[] = [];
-    const commentFrequency = new Map<string, number>();
-    
-    reviews.forEach(review => {
-      const keywords = review.publicReview.toLowerCase()
-        .split(/[^a-z]+/)
-        .filter(word => word.length > 3);
-      
-      keywords.forEach(keyword => {
-        commentFrequency.set(keyword, (commentFrequency.get(keyword) || 0) + 1);
-      });
+private static identifyIssues(reviews: ProcessedReview[]): Issue[] {
+  const issues: Issue[] = [];
+  
+  if (reviews.length === 0) {
+    return issues;
+  }
+
+  // Check for low ratings
+  const lowRatingReviews = reviews.filter(review => review.rating && review.rating <= 2);
+  if (lowRatingReviews.length > 0) {
+    issues.push({
+      category: 'overall',
+      pattern: 'low_rating',
+      count: lowRatingReviews.length,
+      severity: lowRatingReviews.length >= 2 ? 'high' : 'medium',
+      description: `${lowRatingReviews.length} review${lowRatingReviews.length > 1 ? 's' : ''} with rating ≤ 2`
     });
+  }
 
-    const negativePatterns = [
-      { pattern: 'clean', category: 'cleanliness' },
-      { pattern: 'noise', category: 'noise' },
-      { pattern: 'broken', category: 'maintenance' },
-      { pattern: 'smell', category: 'cleanliness' },
-      { pattern: 'small', category: 'space' },
-      { pattern: 'old', category: 'facilities' },
-      { pattern: 'difficult', category: 'check-in' }
-    ];
+  // Define negative keywords with proper typing
+  interface NegativeKeyword {
+    keyword: string;
+    category: string;
+    defaultSeverity: 'high' | 'medium' | 'low';
+  }
 
-    negativePatterns.forEach(({ pattern, category }) => {
-      const count = commentFrequency.get(pattern) || 0;
-      if (count >= 3) {
+  const negativeKeywords: NegativeKeyword[] = [
+    { keyword: 'dirty', category: 'cleanliness', defaultSeverity: 'high' },
+    { keyword: 'noise', category: 'noise', defaultSeverity: 'medium' },
+    { keyword: 'broken', category: 'maintenance', defaultSeverity: 'high' },
+    { keyword: 'smell', category: 'cleanliness', defaultSeverity: 'medium' },
+    { keyword: 'terrible', category: 'overall', defaultSeverity: 'high' },
+    { keyword: 'awful', category: 'overall', defaultSeverity: 'high' },
+    { keyword: 'horrible', category: 'overall', defaultSeverity: 'high' }
+  ];
+
+  // Count occurrences of each negative keyword
+  const keywordCounts = new Map<string, number>();
+  
+  reviews.forEach(review => {
+    const text = review.publicReview.toLowerCase();
+    negativeKeywords.forEach(({ keyword }) => {
+      if (text.includes(keyword)) {
+        keywordCounts.set(keyword, (keywordCounts.get(keyword) || 0) + 1);
+      }
+    });
+  });
+
+  // Create issues for keywords that appear
+  negativeKeywords.forEach(({ keyword, category, defaultSeverity }) => {
+    const count = keywordCounts.get(keyword) || 0;
+    if (count > 0) {
+      // Determine final severity based on count and default severity
+      let finalSeverity: 'high' | 'medium' | 'low';
+      if (count >= 2) {
+        finalSeverity = 'high';
+      } else {
+        finalSeverity = defaultSeverity;
+      }
+      
+      issues.push({
+        category,
+        pattern: keyword,
+        count,
+        severity: finalSeverity,
+        description: `Mention of "${keyword}" in ${count} review${count > 1 ? 's' : ''}`
+      });
+    }
+  });
+
+  // Check for low category ratings
+  reviews.forEach(review => {
+    (review.reviewCategory || []).forEach(category => {
+      if (category.rating <= 5) {
         issues.push({
-          category,
-          pattern,
-          count,
-          severity: count >= 5 ? 'high' : count >= 3 ? 'medium' : 'low',
-          description: `Recurring mention of "${pattern}" (${count} times)`
+          category: category.category,
+          pattern: 'low_category_rating',
+          count: 1,
+          severity: category.rating <= 3 ? 'high' : 'medium',
+          description: `Low ${category.category} rating: ${category.rating}/10`
         });
       }
     });
+  });
 
-    return issues;
-  }
+  return issues;
+}
 
   private static generateRecommendations(reviews: ProcessedReview[], categoryAverages: CategoryStat[]): string[] {
     const recommendations: string[] = [];
@@ -562,13 +609,13 @@ export class DashboardController {
     }
   }
 
-  static async getQuickStats(req: Request, res: Response): Promise<void> {
+static async getQuickStats(req: Request, res: Response): Promise<void> {
   try {
     const { listingId, timeframe = '30d' } = req.query;
 
     // Calculate date range
     const endDate = new Date();
-    const startDate = new Date();
+    let startDate: Date | null = new Date();
     
     switch (timeframe) {
       case '7d':
@@ -583,70 +630,92 @@ export class DashboardController {
       case '1y':
         startDate.setFullYear(startDate.getFullYear() - 1);
         break;
+      case 'all':
+        startDate = null; // No date filter
+        break;
       default:
         startDate.setDate(startDate.getDate() - 30);
     }
 
-    const matchStage: Record<string, unknown> = {
-      submittedAt: { $gte: startDate, $lte: endDate }
-    };
+    const matchStage: Record<string, unknown> = {};
+    
+    // Only add date filter if startDate is not null (not 'all' timeframe)
+    if (startDate !== null) {
+      matchStage.submittedAt = { $gte: startDate, $lte: endDate };
+    }
+    
     if (listingId && typeof listingId === 'string') {
       matchStage.listingId = listingId;
     }
 
-    const [_listings, totalReviews, approvedReviews] = await Promise.all([
-      Review.find(matchStage).sort({ submittedAt: -1 }).limit(10).lean(),
-      Review.countDocuments(matchStage),
-      Review.countDocuments({ ...matchStage, isApproved: true })
-    ]);
-
-    // FIX: Add missing Listing count
+    // Get ALL reviews (not just approved)
+    const allReviews = await Review.find(matchStage).lean() as ProcessedReview[];
+    
+    // Get total listings count
     const totalListings = await Listing.countDocuments({ isActive: true });
 
-    // Calculate averages
-    const ratingAgg = await Review.aggregate([
-      { $match: { ...matchStage, rating: { $ne: null } } },
-      {
-        $group: {
-          _id: null,
-          averageRating: { $avg: '$rating' }
-        }
-      }
-    ]);
+    // Helper to safely calculate rating
+    const safeRating = (review: ProcessedReview): number => {
+      return review.rating || 0;
+    };
 
-    // Recent activity (last 7 days)
-    const lastWeek = new Date();
-    lastWeek.setDate(lastWeek.getDate() - 7);
-    const recentActivity = await Review.countDocuments({
-      ...matchStage,
-      submittedAt: { $gte: lastWeek }
-    });
+    // Calculate approved count
+    const approvedCount = allReviews.filter(review => review.isApproved).length;
+
+    // Calculate average rating from ALL reviews
+    const totalRating = allReviews.reduce((sum: number, review: ProcessedReview) => {
+      return sum + safeRating(review);
+    }, 0);
+    const averageRating = allReviews.length > 0 ? totalRating / allReviews.length : 0;
+
+    // Calculate approval rate
+    const approvalRate = allReviews.length > 0 
+      ? parseFloat(((approvedCount / allReviews.length) * 100).toFixed(1))
+      : 0;
+
+    // Count low rating reviews from ALL reviews
+    const lowRatingCount = allReviews.filter(review => {
+      const rating = safeRating(review);
+      return rating && rating <= 2;
+    }).length;
+
+    // Get distinct channels
+    const channels = await Review.distinct('channel', matchStage);
+    
+    // Count pending reviews
+    const pendingCount = allReviews.length - approvedCount;
+
+    // Recent reviews (last 7 days) - from ALL reviews
+    const last7DaysDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentMatchStage = { 
+      ...matchStage, 
+      submittedAt: { $gte: last7DaysDate, $lte: endDate }
+    };
+    const recentReviews = await Review.find(recentMatchStage).lean() as ProcessedReview[];
+    const last7DaysCount = recentReviews.length;
+
+    // New unapproved reviews (last 7 days)
+    const newUnapprovedCount = recentReviews.filter(review => !review.isApproved).length;
 
     const stats = {
       totals: {
-        reviews: totalReviews,
-        approved: approvedReviews,
-        pending: totalReviews - approvedReviews,
-        listings: totalListings, // FIX: Use the correct listing count
-        channels: await Review.distinct('channel', matchStage).then(channels => channels.length)
+        reviews: allReviews.length, // Total including unapproved
+        approved: approvedCount,
+        pending: pendingCount,
+        listings: totalListings,
+        channels: channels.length
       },
       averages: {
-        rating: ratingAgg[0]?.averageRating ? parseFloat((ratingAgg[0].averageRating as number).toFixed(2)) : 0,
-        approvalRate: totalReviews > 0 ? parseFloat(((approvedReviews / totalReviews) * 100).toFixed(1)) : 0
+        rating: parseFloat(averageRating.toFixed(2)),
+        approvalRate
       },
       recent: {
-        last7Days: recentActivity,
-        newReviews: await Review.countDocuments({
-          ...matchStage,
-          isApproved: false
-        })
+        last7Days: last7DaysCount,
+        newReviews: newUnapprovedCount
       },
       health: {
-        responseRate: 0,
-        issues: await Review.countDocuments({
-          ...matchStage,
-          rating: { $lte: 2 }
-        })
+        responseRate: 0, // Would need managerNotes to calculate
+        issues: lowRatingCount
       }
     };
 
@@ -664,5 +733,4 @@ export class DashboardController {
     });
   }
 }
-
 }

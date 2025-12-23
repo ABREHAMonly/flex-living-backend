@@ -254,32 +254,32 @@ describe('HostawayService', () => {
       expect(MockListing.findOneAndUpdate).toHaveBeenCalled();
     });
 
-  it('should handle empty reviews', async () => {
-    MockReview.find.mockResolvedValue([]);
-
-    // Mock the findOneAndUpdate properly
-    MockListing.findOneAndUpdate.mockResolvedValue({
-      _id: 'listing-id',
-      listingId: 'test-listing',
-      name: 'Test Listing'
-    });
-
-    await (HostawayService as any)['updateListingStats']('test-listing');
-    
-    // The actual method in HostawayService should include { upsert: true }
-    expect(MockListing.findOneAndUpdate).toHaveBeenCalled();
-    
-    // Get the actual call arguments
-    const callArgs = (MockListing.findOneAndUpdate as jest.Mock).mock.calls[0];
-    expect(callArgs[0]).toEqual({ listingId: 'test-listing' });
-    expect(callArgs[1]).toMatchObject({
-      totalReviews: 0,
-      averageRating: 0,
-      lastReviewSync: expect.any(Date)
-    });
-    // Check if upsert is included (it should be in the actual method)
-    expect(callArgs[2]).toEqual({ upsert: true });
+it('should handle empty reviews', async () => {
+  MockReview.find.mockResolvedValue([]);
+  
+  const mockExec = jest.fn().mockResolvedValue({
+    _id: 'listing-id',
+    listingId: 'test-listing',
+    name: 'Test Listing'
   });
+  
+  MockListing.findOneAndUpdate.mockReturnValue({
+    exec: mockExec
+  } as any);
+
+  await (HostawayService as any)['updateListingStats']('test-listing');
+  
+  expect(MockListing.findOneAndUpdate).toHaveBeenCalled();
+  
+  const callArgs = (MockListing.findOneAndUpdate as jest.Mock).mock.calls[0];
+  expect(callArgs[0]).toEqual({ listingId: 'test-listing' });
+  expect(callArgs[1]).toMatchObject({
+    totalReviews: 0,
+    averageRating: 0,
+    lastReviewSync: expect.any(Date)
+  });
+  expect(callArgs[2]).toEqual({ upsert: true });
+});
 });
 
   describe('ensureListingExists', () => {
